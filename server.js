@@ -100,6 +100,26 @@ app.post("/api/products", (req, res) => {
 	});
 });
 
+app.patch("/api/products/:id", (req, res) => {
+	const { stock } = req.body;
+
+	if (!Number.isInteger(stock) || stock < 0) {
+		return res.status(400).json({
+			error: "stock must be a non-negative integer",
+		});
+	}
+
+	const info = db
+		.prepare("UPDATE products SET stock = ? WHERE id = ?")
+		.run(stock, req.params.id);
+
+	if (info.changes === 0) {
+		return res.status(404).json({ error: "Product not found" });
+	}
+
+	res.json({ id: Number(req.params.id), stock });
+});
+
 app.use((err, req, res, next) => {
 	console.error(err);
 
