@@ -17,52 +17,80 @@ db.exec(`
 	)
 `);
 
-app.get("/api/products", (req, res) => {
-	let sql = "SELECT * FROM products WHERE 1 = 1";
+function getProducts(minPrice, maxPrice) {
+	let sql = "SELECT id, name, price, stock FROM products WHERE 1 = 1";
 	const params = [];
 
+	if (minPrice !== undefined) {
+		sql += " AND price >= ?";
+		params.push(minPrice);
+	}
+
+	if (maxPrice !== undefined) {
+		sql += " AND price <= ?";
+		params.push(maxPrice);
+	}
+
+	return db.prepare(sql).all(...params);
+}
+
+function createProduct(name, price, stock) {
+	return db
+		.prepare(
+			"INSERT INTO products (name, price, stock) VALUES (?, ?, ?)"
+		)
+		.run(name, price, stock);
+}
+
+function updateProductStock(id, stock) {
+	return db
+		.prepare("UPDATE products SET stock = ? WHERE id = ?")
+		.run(stock, id);
+}
+
+function deleteProduct(id) {
+	return db
+		.prepare("DELETE FROM products WHERE id = ?")
+		.run(id);
+}
+
+app.get("/api/products", (req, res) => {
+	let minPrice;
+	let maxPrice;
+
 	if (req.query.minPrice !== undefined) {
-		const minPrice = Number(req.query.minPrice);
+		minPrice = Number(req.query.minPrice);
 
 		if (!Number.isFinite(minPrice) || minPrice < 0) {
 			return res.status(400).json({
 				error: "minPrice must be a non-negative number",
 			});
 		}
-
-		sql += " AND price >= ?";
-		params.push(minPrice);
 	}
 
 	if (req.query.maxPrice !== undefined) {
-		const maxPrice = Number(req.query.maxPrice);
+		maxPrice = Number(req.query.maxPrice);
 
 		if (!Number.isFinite(maxPrice) || maxPrice < 0) {
 			return res.status(400).json({
 				error: "maxPrice must be a non-negative number",
 			});
 		}
-
-		sql += " AND price <= ?";
-		params.push(maxPrice);
 	}
 
 	if (
-		req.query.minPrice !== undefined &&
-		req.query.maxPrice !== undefined
+		minPrice !== undefined &&
+		maxPrice !== undefined &&
+		minPrice > maxPrice
 	) {
-		const minPrice = Number(req.query.minPrice);
-		const maxPrice = Number(req.query.maxPrice);
-
-		if (minPrice > maxPrice) {
-			return res.status(400).json({
-				error: "minPrice must be less than or equal to maxPrice",
-			});
-		}
+		return res.status(400).json({
+			error: "minPrice must be less than or equal to maxPrice",
+		});
 	}
 
-	const rows = db.prepare(sql).all(...params);
-	res.json(rows);
+	const products = getProducts(minPrice, maxPrice);
+
+	res.json(products);
 });
 
 app.post("/api/products", (req, res) => {
@@ -88,9 +116,7 @@ app.post("/api/products", (req, res) => {
 
 	const cleanName = name.trim();
 
-	const info = db
-		.prepare("INSERT INTO products (name, price, stock) VALUES (?, ?, ?)")
-		.run(cleanName, price, stock);
+	const info = createProduct(cleanName, price, stock);
 
 	res.status(201).json({
 		id: info.lastInsertRowid,
@@ -101,6 +127,22 @@ app.post("/api/products", (req, res) => {
 });
 
 app.patch("/api/products/:id", (req, res) => {
+	const id = Number(req.params.id);
+
+	if (!Number.isInteger(id) || id <= 0) {
+		return res.status(400).json({
+			error: "id must be a positive integer",
+		});
+	}
+
+	const keys = Object.keys(req.body);
+
+	if (keys.length !== 1 || keys[0] !== "stock") {
+		return res.status(400).json({
+			error: "only stock can be updated",
+		});
+	}
+
 	const { stock } = req.body;
 
 	if (!Number.isInteger(stock) || stock < 0) {
@@ -109,22 +151,35 @@ app.patch("/api/products/:id", (req, res) => {
 		});
 	}
 
-	const info = db
-		.prepare("UPDATE products SET stock = ? WHERE id = ?")
-		.run(stock, req.params.id);
+	const info = updateProductStock(id, stock);
 
 	if (info.changes === 0) {
-		return res.status(404).json({ error: "Product not found" });
+		return res.status(404).json({
+			error: "Product not found",
+		});
 	}
 
-	res.json({ id: Number(req.params.id), stock });
+	res.json({
+		id,
+		stock,
+	});
 });
 
 app.delete("/api/products/:id", (req, res) => {
-	const info = db.prepare("DELETE FROM products WHERE id = ?").run(req.params.id);
+	const id = Number(req.params.id);
+
+	if (!Number.isInteger(id) || id <= 0) {
+		return res.status(400).json({
+			error: "id must be a positive integer",
+		});
+	}
+
+	const info = deleteProduct(id);
 
 	if (info.changes === 0) {
-		return res.status(404).json({ error: "Product not found" });
+		return res.status(404).json({
+			error: "Product not found",
+		});
 	}
 
 	res.status(204).end();
