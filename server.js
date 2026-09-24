@@ -120,6 +120,16 @@ app.patch("/api/products/:id", (req, res) => {
 	res.json({ id: Number(req.params.id), stock });
 });
 
+app.delete("/api/products/:id", (req, res) => {
+	const info = db.prepare("DELETE FROM products WHERE id = ?").run(req.params.id);
+
+	if (info.changes === 0) {
+		return res.status(404).json({ error: "Product not found" });
+	}
+
+	res.status(204).end();
+});
+
 app.use((err, req, res, next) => {
 	console.error(err);
 
