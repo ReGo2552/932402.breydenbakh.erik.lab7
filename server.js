@@ -17,6 +17,23 @@ db.exec(`
 	)
 `);
 
+app.get("/api/products", (req, res) => {
+	let sql = "SELECT * FROM products WHERE 1 = 1";
+	const params = [];
+
+	if (req.query.minPrice !== undefined) {
+		sql += " AND price >= ?";
+		params.push(Number(req.query.minPrice));
+	}
+	if (req.query.maxPrice !== undefined) {
+		sql += " AND price <= ?";
+		params.push(Number(req.query.maxPrice));
+	}
+
+	const rows = db.prepare(sql).all(...params);
+	res.json(rows);
+});
+
 app.listen(PORT, () => {
 	console.log(`Server started on port ${PORT}`);
 });
